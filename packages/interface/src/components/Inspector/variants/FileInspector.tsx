@@ -29,6 +29,7 @@ import {LocationMap} from '../LocationMap';
 import {useState} from 'react';
 import {TagSelectorButton, tagColor} from '../../../components/Tags';
 import {usePlatform} from '../../../contexts/PlatformContext';
+import {useShare} from '../../modals/ShareLinkModal';
 import {useServer} from '../../../contexts/ServerContext';
 import {useOptionalExplorer} from '../../../routes/explorer';
 import { getContentKind, getContentKindName } from "@sd/ts-client";
@@ -163,7 +164,8 @@ function FileQuickActions({file}: {file: File}) {
 		file.is_local && file.sd_path && 'Physical' in file.sd_path
 			? file.sd_path.Physical.path
 			: null;
-	const canShare = !!physicalPath && !!platform.shareFiles;
+	const sharing = useShare();
+	const canShare = !!physicalPath && sharing.canShare([physicalPath]);
 
 	const handleFavorite = async () => {
 		setIsFavorite(!isFavorite);
@@ -171,7 +173,7 @@ function FileQuickActions({file}: {file: File}) {
 	};
 
 	const handleShare = async () => {
-		if (!physicalPath || !platform.shareFiles) {
+		if (!physicalPath || !canShare) {
 			toast.error({
 				title: 'Cannot Share',
 				body: 'This file cannot be shared from its current location'
@@ -180,7 +182,7 @@ function FileQuickActions({file}: {file: File}) {
 		}
 
 		try {
-			await platform.shareFiles([physicalPath]);
+			await sharing.share([physicalPath]);
 		} catch (err) {
 			console.error('Failed to share file:', err);
 			toast.error({

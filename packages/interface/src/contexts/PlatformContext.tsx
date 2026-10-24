@@ -42,6 +42,18 @@ export type Platform = {
 
 	/** Share files using native system share sheet (macOS/iOS only) */
 	shareFiles?(filePaths: string[]): Promise<void>;
+	/** Whether downloads, uploads and share links may use this path (web only) */
+	allowsFileAccess?(path: string): boolean;
+	/** Download files from a remote server to this browser (web only) */
+	downloadFiles?(filePaths: string[]): void;
+	/** Upload browser files into a folder on the server (web only) */
+	uploadFiles?(
+		directory: string,
+		files: globalThis.File[],
+		onProgress?: (sent: number, total: number) => void
+	): Promise<void>;
+	/** Public links to files on a remote server (web only) */
+	shareLinks?: ShareLinkApi;
 
 	/** Get applications that can open the given file paths (intersection for multiple files) */
 	getAppsForPaths?(paths: string[]): Promise<OpenWithApp[]>;
@@ -173,6 +185,29 @@ export type Platform = {
 	/** Unregister a keybind handler (Tauri only) */
 	unregisterKeybind?(id: string): Promise<void>;
 };
+
+/** A public link to a file or folder on the server */
+export interface ShareLink {
+	token: string;
+	/** Absolute URL to send to someone */
+	url: string;
+	path: string;
+	name: string;
+	is_dir: boolean;
+	created_at: number;
+	/** Unix seconds, or null for a link that never expires */
+	expires_at: number | null;
+	has_password: boolean;
+}
+
+export interface ShareLinkApi {
+	list(path: string): Promise<ShareLink[]>;
+	create(
+		path: string,
+		options: { expiresInHours: number | null; password: string | null }
+	): Promise<ShareLink>;
+	remove(token: string): Promise<void>;
+}
 
 /** Application that can open a file */
 export interface OpenWithApp {

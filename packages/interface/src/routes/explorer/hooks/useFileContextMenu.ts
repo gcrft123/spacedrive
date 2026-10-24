@@ -4,6 +4,7 @@ import {
 	Books,
 	Browsers,
 	Copy,
+	DownloadSimple,
 	Eye,
 	FileArchive,
 	FileZip,
@@ -32,6 +33,7 @@ import {useBatchRenameDialog} from '../../../components/modals/RenameModal';
 import {useFlattenDialog, useOrganizeDialog} from '../../../components/modals/RearrangeModal';
 import {isArchiveName, useArchiveDialog, useExtractDialog} from '../../../components/modals/ArchiveModal';
 import {useAttributesDialog} from '../../../components/modals/AttributesModal';
+import {useShare} from '../../../components/modals/ShareLinkModal';
 import {useAddToLibraryDialog} from '../components/AddToLibraryModal';
 import {usePlatform} from '../../../contexts/PlatformContext';
 import {useLibraryMutation} from '../../../contexts/SpacedriveContext';
@@ -88,6 +90,7 @@ export function useFileContextMenu({
 
 	// Paths on this machine, for the platform calls that take one. Another
 	// device's path would name a different file here, or none.
+	const sharing = useShare();
 	const localPaths = openTargets.flatMap((f) =>
 		f.is_local && 'Physical' in f.sd_path ? [f.sd_path.Physical.path] : []
 	);
@@ -243,9 +246,9 @@ export function useFileContextMenu({
 						console.warn('No physical files to share');
 						return;
 					}
-					if (platform.shareFiles) {
+					if (sharing.canShare(paths)) {
 						try {
-							await platform.shareFiles(paths);
+							await sharing.share(paths);
 						} catch (err) {
 							console.error('Failed to share files:', err);
 							toast.error(`Failed to share: ${err}`);
@@ -255,7 +258,21 @@ export function useFileContextMenu({
 				condition: () =>
 					localPaths.length > 0 &&
 					localPaths.length === openTargets.length &&
-					!!platform.shareFiles
+					sharing.canShare(localPaths)
+			},
+			{
+				icon: DownloadSimple,
+				label:
+					selected && selectedFiles.length > 1
+						? `Download ${selectedFiles.length} items`
+						: 'Download',
+				onClick: () => platform.downloadFiles?.(localPaths),
+				condition: () =>
+					localPaths.length > 0 &&
+					localPaths.length === openTargets.length &&
+					openTargets.every((f) => f.kind !== 'Directory') &&
+					localPaths.every((path) => platform.allowsFileAccess?.(path) ?? true) &&
+					!!platform.downloadFiles
 			},
 			{
 				icon: Books,

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { PlatformProvider, Shell } from "@sd/interface";
 import { SpacedriveClient, HttpTransport } from "@sd/ts-client";
 import { platform } from "./platform";
+import { loadRoots } from "./server-files";
 import "./index.css";
 import "@sd/interface/styles.css";
 
@@ -18,8 +19,10 @@ function App() {
 	);
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-	<React.StrictMode>
-		<App />
-	</React.StrictMode>
-);
+loadRoots().finally(() => {
+	ReactDOM.createRoot(document.getElementById("root")!).render(
+		<React.StrictMode>
+			<App />
+		</React.StrictMode>
+	);
+});

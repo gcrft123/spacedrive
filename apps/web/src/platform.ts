@@ -1,4 +1,5 @@
-import type { Platform } from "@sd/interface/platform";
+import type { Platform } from "@sd/interface";
+import { allowsFileAccess, downloadFiles, fileUrl, shareLinks, uploadFiles } from "./server-files";
 
 /**
  * Web platform implementation for Spacedrive server
@@ -28,6 +29,20 @@ export const platform: Platform = {
 	confirm(message: string, callback: (result: boolean) => void) {
 		callback(window.confirm(message));
 	},
+
+	// Originals stream from sd-server, which serves only paths inside its
+	// SD_FILE_ROOTS. Previews, "Open", downloads and uploads all go through it.
+	convertFileSrc: (path) => fileUrl(path),
+
+	async openPathDefault(path) {
+		window.open(fileUrl(path), "_blank", "noopener,noreferrer");
+		return { status: "success" };
+	},
+
+	allowsFileAccess,
+	downloadFiles,
+	uploadFiles,
+	shareLinks,
 
 	// Web-specific implementations (no native capabilities)
 	// File pickers, daemon control, etc. are not available on web

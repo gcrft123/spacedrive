@@ -47,6 +47,7 @@ import {MediaView} from './views/MediaView';
 import {SearchView} from './views/SearchView';
 import {SizeView} from './views/SizeView';
 import {ViewSettings, ViewSettingsPanel} from './ViewSettings';
+import {UploadButton, UploadDropZone, useUpload} from './components/Upload';
 
 export function ExplorerView({
 	defaultViewMode = 'grid'
@@ -101,6 +102,7 @@ export function ExplorerView({
 	]);
 
 	const {isVirtualView} = useVirtualListing();
+	const {directory: uploadDirectory} = useUpload();
 	const isPreviewActive = !!quickPreviewFileId;
 
 	// In column view, the path bar should reflect the deepest column, not the root
@@ -321,6 +323,15 @@ export function ExplorerView({
 					}
 					right={
 						<>
+							{uploadDirectory && (
+								<TopBarItem
+									id="upload"
+									label="Upload"
+									priority="high"
+								>
+									<UploadButton />
+								</TopBarItem>
+							)}
 							<TopBarItem
 								id="search"
 								label="Search"
@@ -423,6 +434,7 @@ export function ExplorerView({
 			>
 				{searchBar !== 'closed' && <SearchToolbar ref={searchBarRef} />}
 				<PlanPreviewBanner />
+				<UploadDropZone>
 				<div
 					className={clsx(
 						'flex-1',
@@ -449,6 +461,7 @@ export function ExplorerView({
 						)}
 					</TabNavigationGuard>
 				</div>
+				</UploadDropZone>
 			</div>
 		</>
 	);

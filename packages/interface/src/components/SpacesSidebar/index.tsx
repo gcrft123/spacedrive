@@ -199,7 +199,11 @@ export function SpacesSidebar({
 		type: 'paths.system_folders',
 		input: null
 	});
-	const systemFolders = systemFoldersData?.folders ?? [];
+	// A server that serves only some folders (sd-server's file roots) hides
+	// system folders outside them, which it cannot open.
+	const systemFolders = (systemFoldersData?.folders ?? []).filter(
+		(folder) => platform.allowsFileAccess?.(folder.path) ?? true
+	);
 
 	const {data: sourcesData} = useLibraryQuery({
 		type: 'sources.list',
