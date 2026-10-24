@@ -1,13 +1,13 @@
 use axum::{
 	body::Body,
-	extract::{FromRequestParts, Request, State},
+	extract::{ConnectInfo, FromRequestParts, Request, State},
 	http::{header, StatusCode, Uri},
 	middleware::{self, Next},
 	response::{
 		sse::{Event as SseEvent, KeepAlive, Sse},
 		IntoResponse, Response,
 	},
-	routing::{get, post},
+	routing::{delete, get, post, put},
 	Json, Router,
 };
 use axum_extra::{headers::authorization::Basic, headers::Authorization, TypedHeader};
@@ -28,6 +28,10 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{info, warn};
 
+mod files;
+mod shares;
+mod throttle;
+
 /// Embedded web UI assets, built from `apps/web` via `bun run build`.
 /// In debug builds, files are read from disk at request time, so editing
 /// `apps/web/dist/` after a rebuild of the frontend is picked up live.
@@ -44,41 +48,60 @@ struct AppState {
 	auth: HashMap<String, SecStr>,
 	socket_addr: String,
 	data_dir: PathBuf,
+	files: Arc<files::FileRoots>,
+	shares: Arc<shares::ShareStore>,
+	throttle: Arc<throttle::Throttle>,
 }
 
-/// Basic auth middleware
+fn unauthorized() -> Response {
+	Response::builder()
+		.status(401)
+		.header("WWW-Authenticate", "Basic realm=\"Spacedrive\"")
+		.body("Unauthorized".into_response().into_body())
+		.expect("hardcoded response will be valid")
+}
+
+/// Basic auth middleware. Share links and the health check are public; a
+/// client that keeps sending wrong credentials is locked out for a while.
 async fn basic_auth(State(state): State<AppState>, request: Request, next: Next) -> Response {
-	let request = if !state.auth.is_empty() {
-		let (mut parts, body) = request.into_parts();
+	let path = request.uri().path();
+	if state.auth.is_empty() || path == "/health" || path.starts_with("/s/") {
+		return next.run(request).await;
+	}
 
-		let Ok(TypedHeader(Authorization(hdr))) =
-			TypedHeader::<Authorization<Basic>>::from_request_parts(&mut parts, &()).await
-		else {
-			return Response::builder()
-				.status(401)
-				.header("WWW-Authenticate", "Basic realm=\"Spacedrive\"")
-				.body("Unauthorized".into_response().into_body())
-				.expect("hardcoded response will be valid");
-		};
-		let request = Request::from_parts(parts, body);
+	let ip = request
+		.extensions()
+		.get::<ConnectInfo<SocketAddr>>()
+		.map(|ConnectInfo(peer)| throttle::client_ip(*peer, request.headers()));
+	if ip.is_some_and(|ip| state.throttle.blocked(ip)) {
+		return plain_status(
+			StatusCode::TOO_MANY_REQUESTS,
+			"Too many failed logins. Try again in 15 minutes.",
+		);
+	}
 
-		if state
-			.auth
-			.get(hdr.username())
-			.map(|pass| *pass == SecStr::from(hdr.password()))
-			!= Some(true)
-		{
-			return Response::builder()
-				.status(401)
-				.header("WWW-Authenticate", "Basic realm=\"Spacedrive\"")
-				.body("Unauthorized".into_response().into_body())
-				.expect("hardcoded response will be valid");
-		}
-
-		request
-	} else {
-		request
+	let (mut parts, body) = request.into_parts();
+	let Ok(TypedHeader(Authorization(hdr))) =
+		TypedHeader::<Authorization<Basic>>::from_request_parts(&mut parts, &()).await
+	else {
+		return unauthorized();
 	};
+	let request = Request::from_parts(parts, body);
+
+	if state
+		.auth
+		.get(hdr.username())
+		.map(|pass| *pass == SecStr::from(hdr.password()))
+		!= Some(true)
+	{
+		if let Some(ip) = ip {
+			state.throttle.fail(ip);
+		}
+		return unauthorized();
+	}
+	if let Some(ip) = ip {
+		state.throttle.clear(ip);
+	}
 
 	next.run(request).await
 }
@@ -513,6 +536,11 @@ struct Args {
 	#[arg(long)]
 	instance: Option<String>,
 
+	/// Comma-separated folders whose files the web UI may download, upload
+	/// into, and share by link. Empty disables all three.
+	#[arg(long, env = "SD_FILE_ROOTS")]
+	file_roots: Option<String>,
+
 	/// Enable P2P networking
 	#[arg(long, env = "SD_P2P", default_value = "true")]
 	p2p: bool,
@@ -587,10 +615,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		start_daemon_if_needed(socket_addr.clone(), data_dir.clone(), args.p2p).await?;
 
 	// Build HTTP router
+	let files = files::FileRoots::parse(args.file_roots.as_deref());
+	if files.is_empty() {
+		info!("SD_FILE_ROOTS is not set; downloads, uploads and share links are off");
+	}
 	let state = AppState {
 		auth,
 		socket_addr: socket_addr.clone(),
 		data_dir: data_dir.clone(),
+		files: Arc::new(files),
+		shares: Arc::new(shares::ShareStore::load(&data_dir)?),
+		throttle: Arc::default(),
 	};
 
 	let app = Router::new()
@@ -613,6 +648,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			"/extension/:extension_id/*path",
 			get(serve_extension_bundle),
 		)
+		.route("/api/roots", get(files::get_roots))
+		.route("/api/file", get(files::get_file))
+		.route("/api/upload", put(files::put_upload))
+		.route("/api/shares", get(shares::list).post(shares::create))
+		.route("/api/shares/:token", delete(shares::remove))
+		.route("/s/:token", get(shares::public_root).post(shares::unlock))
+		.route("/s/:token/*rest", get(shares::public_path))
 		.fallback(serve_web)
 		.layer(middleware::from_fn_with_state(state.clone(), basic_auth))
 		.with_state(state);
@@ -628,9 +670,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	info!("Spacedrive Server listening on http://{}", addr);
 	info!("Web UI available at /");
 	info!("RPC endpoint available at /rpc");
-	axum::serve(listener, app)
-		.with_graceful_shutdown(shutdown_signal)
-		.await?;
+	axum::serve(
+		listener,
+		app.into_make_service_with_connect_info::<SocketAddr>(),
+	)
+	.with_graceful_shutdown(shutdown_signal)
+	.await?;
 
 	Ok(())
 }
@@ -653,12 +698,9 @@ fn parse_auth(auth_str: Option<&str>) -> (HashMap<String, SecStr>, bool) {
 				return None;
 			}
 
-			let mut parts = s.split(':');
-			let result = parts.next().and_then(|user| {
-				parts
-					.next()
-					.map(|pass| (user.to_string(), SecStr::from(pass)))
-			});
+			let result = s
+				.split_once(':')
+				.map(|(user, pass)| (user.to_string(), SecStr::from(pass)));
 
 			if result.is_none() {
 				warn!("Found invalid credential {i}. Skipping...");

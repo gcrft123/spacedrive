@@ -22,6 +22,20 @@ pub async fn start_default_server(
 	#[cfg(unix)]
 	raise_fd_limit();
 
+	// Core::new also starts networking on its own when the saved config says
+	// so, which it does by default. Turning networking off has to reach the
+	// config, or the endpoint, mDNS and relay connections open anyway.
+	if !enable_networking {
+		let mut config = crate::config::AppConfig::load_or_create(&data_dir)
+			.map_err(|e| format!("Failed to load config: {}", e))?;
+		if config.services.networking_enabled {
+			config.services.networking_enabled = false;
+			config
+				.save()
+				.map_err(|e| format!("Failed to save config: {}", e))?;
+		}
+	}
+
 	// Create a single Core instance
 	let mut core = Core::new(data_dir.clone())
 		.await
