@@ -29,6 +29,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{info, warn};
 
 mod files;
+mod rescan;
 mod shares;
 mod throttle;
 
@@ -662,6 +663,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		throttle: Arc::default(),
 		web_dir: args.web_dir.clone(),
 	};
+
+	rescan::every_interval(state.socket_addr.clone(), state.files.clone());
 
 	let app = Router::new()
 		.route("/health", get(health))

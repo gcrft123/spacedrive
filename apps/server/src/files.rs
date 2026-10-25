@@ -304,6 +304,11 @@ pub async fn put_upload(
 	if tokio::fs::rename(&partial, &target).await.is_err() {
 		return plain_status(StatusCode::INTERNAL_SERVER_ERROR, "could not finish upload");
 	}
+	tokio::spawn(crate::rescan::scan(
+		state.socket_addr.clone(),
+		vec![dir.to_string_lossy().into_owned()],
+		false,
+	));
 	Json(UploadReply::Complete {
 		path: target.to_string_lossy().into_owned(),
 	})
