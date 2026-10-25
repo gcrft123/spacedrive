@@ -521,9 +521,9 @@ fn expiry_note(share: &Share) -> String {
 	let left = at - now();
 	let text = match left {
 		s if s < 3600 => "Expires in less than an hour".to_string(),
+		s if s < 7200 => "Expires in 1 hour".to_string(),
 		s if s < 86_400 => format!("Expires in {} hours", s / 3600),
-		s if s < 172_800 => "Expires tomorrow".to_string(),
-		s => format!("Expires in {} days", s / 86_400),
+		s => format!("Expires in {} days", (s + 86_399) / 86_400),
 	};
 	format!(r#"<p class="note">{text}</p>"#)
 }

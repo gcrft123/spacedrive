@@ -51,6 +51,8 @@ struct AppState {
 	files: Arc<files::FileRoots>,
 	shares: Arc<shares::ShareStore>,
 	throttle: Arc<throttle::Throttle>,
+	/// Serve the web UI from this folder instead of the embedded copy.
+	web_dir: Option<PathBuf>,
 }
 
 fn unauthorized() -> Response {
@@ -114,9 +116,13 @@ async fn health() -> &'static str {
 /// Serve the embedded web UI. Looks up the requested path in `WebAssets`;
 /// if not found, falls back to `index.html` so client-side routing in the
 /// SPA continues to work for deep links like `/explorer/foo/bar`.
-async fn serve_web(uri: Uri) -> Response {
+async fn serve_web(State(state): State<AppState>, uri: Uri) -> Response {
 	let path = uri.path().trim_start_matches('/');
 	let lookup = if path.is_empty() { "index.html" } else { path };
+
+	if let Some(dir) = &state.web_dir {
+		return serve_web_dir(dir, lookup).await;
+	}
 
 	if let Some(asset) = WebAssets::get(lookup) {
 		let mime = mime_guess::from_path(lookup).first_or_octet_stream();
@@ -142,6 +148,29 @@ async fn serve_web(uri: Uri) -> Response {
 			 Run `bun run build` in `apps/web/` and rebuild sd-server.",
 		))
 		.expect("missing-bundle response is well-formed")
+}
+
+/// `serve_web` from a folder on disk, with the same SPA fallback.
+async fn serve_web_dir(dir: &std::path::Path, lookup: &str) -> Response {
+	let safe = !lookup
+		.split('/')
+		.any(|part| part == ".." || part.starts_with('.'));
+	if safe {
+		if let Ok(bytes) = tokio::fs::read(dir.join(lookup)).await {
+			let mime = mime_guess::from_path(lookup).first_or_octet_stream();
+			return Response::builder()
+				.header(header::CONTENT_TYPE, mime.as_ref())
+				.body(Body::from(bytes))
+				.expect("static asset response is well-formed");
+		}
+	}
+	match tokio::fs::read(dir.join("index.html")).await {
+		Ok(index) => Response::builder()
+			.header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+			.body(Body::from(index))
+			.expect("index.html response is well-formed"),
+		Err(_) => plain_status(StatusCode::NOT_FOUND, "web UI folder has no index.html"),
+	}
 }
 
 /// Locate a library folder by its UUID. Library directory names are
@@ -541,6 +570,11 @@ struct Args {
 	#[arg(long, env = "SD_FILE_ROOTS")]
 	file_roots: Option<String>,
 
+	/// Serve the web UI from this folder (a built `apps/web/dist`) instead of
+	/// the copy embedded at compile time, so the UI updates without a rebuild.
+	#[arg(long, env = "SD_WEB_DIR")]
+	web_dir: Option<PathBuf>,
+
 	/// Enable P2P networking
 	#[arg(long, env = "SD_P2P", default_value = "true")]
 	p2p: bool,
@@ -626,6 +660,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		files: Arc::new(files),
 		shares: Arc::new(shares::ShareStore::load(&data_dir)?),
 		throttle: Arc::default(),
+		web_dir: args.web_dir.clone(),
 	};
 
 	let app = Router::new()
