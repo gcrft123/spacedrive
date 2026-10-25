@@ -227,6 +227,16 @@ export function useNormalizedQuery<I, O = any, TSelected = O>(
 						console.log(`[useNormalizedQuery] Subscription ACTIVE`);
 					}
 					unsubscribe = unsub;
+					// The query ran before this subscription existed. A folder
+					// walk that finished in between announced its files to no
+					// one, and the first answer was empty, so ask again now
+					// that later changes will be heard.
+					if (options.pathScope) {
+						void queryClient.invalidateQueries({
+							queryKey: capturedQueryKey,
+							exact: true,
+						});
+					}
 				}
 			})
 			.catch((error) => {
