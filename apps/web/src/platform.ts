@@ -1,5 +1,12 @@
 import type { Platform } from "@sd/interface";
-import { allowsFileAccess, downloadFiles, fileUrl, shareLinks, uploadFiles } from "./server-files";
+import {
+	allowsFileAccess,
+	downloadFiles,
+	fileRoots,
+	fileUrl,
+	shareLinks,
+	uploadFiles,
+} from "./server-files";
 
 /**
  * Web platform implementation for Spacedrive server
@@ -39,6 +46,9 @@ export const platform: Platform = {
 		return { status: "success" };
 	},
 
+	get fileRoots() {
+		return fileRoots();
+	},
 	allowsFileAccess,
 	downloadFiles,
 	uploadFiles,

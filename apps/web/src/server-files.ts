@@ -27,6 +27,10 @@ function shortForm(path: string) {
 		: path;
 }
 
+export function fileRoots() {
+	return roots;
+}
+
 export function allowsFileAccess(path: string) {
 	const target = shortForm(path);
 	return roots.some(

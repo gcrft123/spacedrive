@@ -1,5 +1,8 @@
 import clsx from "clsx";
 import type { File as FileType } from "@sd/ts-client";
+import { isVirtualFile } from "@sd/ts-client";
+import { useCompactLayout } from "../../../hooks/useCompactLayout";
+import { useOptionalExplorer } from "../context";
 import { Thumb } from "./Thumb";
 import { Title } from "./Title";
 import { Metadata } from "./Metadata";
@@ -35,10 +38,25 @@ function FileComponent({
 	className,
 	"data-file-id": dataFileId,
 }: FileProps) {
+	const compact = useCompactLayout();
+	const explorer = useOptionalExplorer();
+
+	// Phones send no reliable double-tap, so a tap opens folders and shows a
+	// file's details (preview, share, download) in the inspector.
+	const handleClick = (e: React.MouseEvent) => {
+		onClick?.(e);
+		if (!compact || !explorer) return;
+		if (_file.kind === "Directory" || isVirtualFile(_file)) {
+			onDoubleClick?.(e);
+		} else {
+			explorer?.setInspectorVisible(true);
+		}
+	};
+
 	return (
 		<div
 			data-file-id={dataFileId}
-			onClick={onClick}
+			onClick={handleClick}
 			onDoubleClick={onDoubleClick}
 			onContextMenu={onContextMenu}
 			onMouseDown={onMouseDown}

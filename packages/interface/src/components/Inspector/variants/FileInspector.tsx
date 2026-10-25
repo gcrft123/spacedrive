@@ -14,6 +14,7 @@ import {
 	MapPin,
 	Paperclip,
 	PaperPlaneRight,
+	DownloadSimple,
 	ShareNetwork,
 	Sparkle,
 	Tag as TagIcon,
@@ -166,6 +167,11 @@ function FileQuickActions({file}: {file: File}) {
 			: null;
 	const sharing = useShare();
 	const canShare = !!physicalPath && sharing.canShare([physicalPath]);
+	const canDownload =
+		!!physicalPath &&
+		file.kind !== 'Directory' &&
+		!!platform.downloadFiles &&
+		(platform.allowsFileAccess?.(physicalPath) ?? true);
 
 	const handleFavorite = async () => {
 		setIsFavorite(!isFavorite);
@@ -233,6 +239,16 @@ function FileQuickActions({file}: {file: File}) {
 				</button>
 			)}
 
+			{canDownload && (
+				<button
+					type="button"
+					onClick={() => platform.downloadFiles?.([physicalPath!])}
+					className="border-sidebar-line/30 bg-sidebar-box/20 text-sidebar-inkDull hover:bg-sidebar-box/30 hover:text-sidebar-ink flex size-7 items-center justify-center rounded-full border transition-all active:scale-95"
+					title="Download"
+				>
+					<DownloadSimple size={14} weight="bold" />
+				</button>
+			)}
 		</div>
 	);
 }

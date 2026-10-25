@@ -16,6 +16,7 @@ import {
 	TabNavigationSync
 } from './components/TabManager';
 import {usePlatform} from './contexts/PlatformContext';
+import {useCompactLayout} from './hooks/useCompactLayout';
 import {
 	SHELL_INSPECTOR_WIDTH,
 	SHELL_SIDEBAR_WIDTH,
@@ -36,8 +37,10 @@ function ShellLayoutContent() {
 	const platform = usePlatform();
 	const layoutMode = useShellLayout();
 	const isInset = layoutMode === 'inset';
+	const compact = useCompactLayout();
 	const {
 		sidebarVisible,
+		setSidebarVisible,
 		inspectorVisible,
 		setInspectorVisible,
 		quickPreviewFileId,
@@ -76,6 +79,18 @@ function ShellLayoutContent() {
 		};
 	}, [platform, setInspectorVisible]);
 
+	// On a phone the panels cover the content, so they start closed, and the
+	// sidebar closes once it has taken you somewhere.
+	useEffect(() => {
+		if (!compact) return;
+		setSidebarVisible(false);
+		setInspectorVisible(false);
+	}, [compact, setSidebarVisible, setInspectorVisible]);
+	useEffect(() => {
+		if (compact) setSidebarVisible(false);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [location.pathname, location.search]);
+
 	const handlePopOutInspector = async () => {
 		if (!platform.showWindow) return;
 
@@ -97,10 +112,11 @@ function ShellLayoutContent() {
 	const geometry = useMemo(
 		() => ({
 			mode: layoutMode,
-			overlayLeft: !isInset && sidebarVisible ? SHELL_SIDEBAR_WIDTH : 0,
-			overlayRight: showInspector ? SHELL_INSPECTOR_WIDTH : 0
+			overlayLeft:
+				!compact && !isInset && sidebarVisible ? SHELL_SIDEBAR_WIDTH : 0,
+			overlayRight: !compact && showInspector ? SHELL_INSPECTOR_WIDTH : 0
 		}),
-		[layoutMode, isInset, sidebarVisible, showInspector]
+		[layoutMode, compact, isInset, sidebarVisible, showInspector]
 	);
 
 	return (
@@ -115,8 +131,19 @@ function ShellLayoutContent() {
 			>
 				<div className="flex min-h-0 flex-1 overflow-hidden">
 					<AnimatePresence initial={false} mode="popLayout">
+						{sidebarVisible && compact && (
+							<motion.div
+								key="sidebar-backdrop"
+								initial={{opacity: 0}}
+								animate={{opacity: 1}}
+								exit={{opacity: 0}}
+								className="fixed inset-0 z-[79] bg-black/50"
+								onClick={() => setSidebarVisible(false)}
+							/>
+						)}
 						{sidebarVisible && (
 							<motion.div
+								key="sidebar"
 								initial={{x: -SHELL_SIDEBAR_WIDTH, width: 0}}
 								animate={{x: 0, width: SHELL_SIDEBAR_WIDTH}}
 								exit={{x: -SHELL_SIDEBAR_WIDTH, width: 0}}
@@ -124,7 +151,12 @@ function ShellLayoutContent() {
 									duration: 0.3,
 									ease: [0.25, 1, 0.5, 1]
 								}}
-								className="relative z-[65] shrink-0 overflow-hidden"
+								className={clsx(
+									'shrink-0 overflow-hidden',
+									compact
+										? 'bg-sidebar fixed inset-y-0 left-0 z-[80]'
+										: 'relative z-[65]'
+								)}
 							>
 								<SpacesSidebar
 									presentation={isInset ? 'flat' : 'floating'}
@@ -143,7 +175,7 @@ function ShellLayoutContent() {
 							'flex min-h-0 min-w-0 flex-1',
 							isInset &&
 								'border-app-line bg-app relative my-[10px] mr-[10px] overflow-hidden rounded-2xl border',
-							isInset && !sidebarVisible && 'ml-[10px]'
+							isInset && (compact || !sidebarVisible) && 'ml-[10px]'
 						)}
 					>
 						<div
@@ -165,7 +197,10 @@ function ShellLayoutContent() {
 								geometry.overlayRight +
 								(!isInset && showInspector ? 4 : 0)
 							}
-							reserveWindowControls={!sidebarVisible}
+							reserveWindowControls={compact || !sidebarVisible}
+							onOpenMenu={
+								compact ? () => setSidebarVisible(true) : undefined
+							}
 						/>
 
 						{isSizeViewActive && (
@@ -204,8 +239,19 @@ function ShellLayoutContent() {
 						</div>
 
 						<AnimatePresence initial={false}>
+							{showInspector && compact && (
+								<motion.div
+									key="inspector-backdrop"
+									initial={{opacity: 0}}
+									animate={{opacity: 1}}
+									exit={{opacity: 0}}
+									className="fixed inset-0 z-[79] bg-black/50"
+									onClick={() => setInspectorVisible(false)}
+								/>
+							)}
 							{showInspector && (
 								<motion.div
+									key="inspector"
 									initial={{width: 0}}
 									animate={{width: SHELL_INSPECTOR_WIDTH}}
 									exit={{width: 0}}
@@ -213,7 +259,12 @@ function ShellLayoutContent() {
 										duration: 0.3,
 										ease: [0.25, 1, 0.5, 1]
 									}}
-									className="relative z-[65] shrink-0 overflow-hidden"
+									className={clsx(
+										'shrink-0 overflow-hidden',
+										compact
+											? 'bg-app fixed inset-y-0 right-0 z-[80] max-w-[100vw]'
+											: 'relative z-[65]'
+									)}
 								>
 									<div
 										className={clsx(

@@ -42,6 +42,9 @@ export type Platform = {
 
 	/** Share files using native system share sheet (macOS/iOS only) */
 	shareFiles?(filePaths: string[]): Promise<void>;
+	/** Folders on the server that files can be downloaded from, uploaded into
+	 * and shared from (web only) */
+	fileRoots?: string[];
 	/** Whether downloads, uploads and share links may use this path (web only) */
 	allowsFileAccess?(path: string): boolean;
 	/** Download files from a remote server to this browser (web only) */

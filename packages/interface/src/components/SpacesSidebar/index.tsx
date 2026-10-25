@@ -292,9 +292,23 @@ export function SpacesSidebar({
 			.catch((error) => console.error('Failed to open settings:', error));
 	};
 
+	// The server's file roots lead Places, since on the web they are the
+	// folders that can be opened, uploaded into and shared.
+	const rootPlaces = deviceSlug
+		? (platform.fileRoots ?? []).map((path) => ({
+				path,
+				name: path.split('/').filter(Boolean).pop() ?? path,
+				href: routeForPath({Physical: {device_slug: deviceSlug, path}})
+			}))
+		: [];
 	const occupiedPlaceRoutes = useMemo(
-		() => new Set(systemFolders.map((folder) => routeForPath(folder.sd_path))),
-		[systemFolders]
+		() =>
+			new Set([
+				...systemFolders.map((folder) => routeForPath(folder.sd_path)),
+				...rootPlaces.map((place) => place.href)
+			]),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[systemFolders, rootPlaces.map((place) => place.href).join('\n')]
 	);
 	const visibleSources = sources.filter(
 		(source) =>
@@ -315,7 +329,8 @@ export function SpacesSidebar({
 					group.group_type === 'QuickAccess') &&
 				items.length > 0
 		) ?? [];
-	const hasPlaces = systemFolders.length > 0 || otherSources.length > 0;
+	const hasPlaces =
+		rootPlaces.length > 0 || systemFolders.length > 0 || otherSources.length > 0;
 	const activityCount = activeJobCount > 0 ? activeJobCount : undefined;
 	const isActivityActive = ['/activity', '/jobs'].includes(location.pathname);
 	const activityLabel =
@@ -416,6 +431,22 @@ export function SpacesSidebar({
 
 						{hasPlaces && (
 							<SidebarSection title="Places">
+								{rootPlaces.map((place) => (
+									<SidebarItem
+										key={place.href}
+										id={`file-root-${place.path}`}
+										label={place.name}
+										iconNode={
+											<img
+												src={FolderIcon}
+												alt=""
+												className="size-[18px] max-w-none"
+											/>
+										}
+										href={place.href}
+										title={place.path}
+									/>
+								))}
 								{systemFolders.map((folder) => {
 									const href = routeForPath(folder.sd_path);
 									return (

@@ -48,6 +48,7 @@ import {SearchView} from './views/SearchView';
 import {SizeView} from './views/SizeView';
 import {ViewSettings, ViewSettingsPanel} from './ViewSettings';
 import {UploadButton, UploadDropZone, useUpload} from './components/Upload';
+import {useCompactLayout} from '../../hooks/useCompactLayout';
 
 export function ExplorerView({
 	defaultViewMode = 'grid'
@@ -103,6 +104,7 @@ export function ExplorerView({
 
 	const {isVirtualView} = useVirtualListing();
 	const {directory: uploadDirectory} = useUpload();
+	const compact = useCompactLayout();
 	const isPreviewActive = !!quickPreviewFileId;
 
 	// In column view, the path bar should reflect the deepest column, not the root
@@ -260,6 +262,7 @@ export function ExplorerView({
 				<TopBarPortal
 					left={
 						<>
+							{!compact && (
 							<TopBarItem
 								id="sidebar-toggle"
 								label="Sidebar"
@@ -276,6 +279,7 @@ export function ExplorerView({
 									active={!sidebarVisible}
 								/>
 							</TopBarItem>
+							)}
 							<TopBarItem
 								id="navigation"
 								label="Navigation"

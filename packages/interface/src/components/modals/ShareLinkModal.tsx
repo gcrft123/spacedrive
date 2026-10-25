@@ -65,9 +65,8 @@ function nameOf(path: string) {
 
 function expiryText(link: ShareLink) {
 	if (link.expires_at === null) return 'Never expires';
-	const days = Math.round((link.expires_at * 1000 - Date.now()) / 86_400_000);
-	if (days < 1) return 'Expires today';
-	if (days === 1) return 'Expires tomorrow';
+	const days = Math.ceil((link.expires_at * 1000 - Date.now()) / 86_400_000);
+	if (days <= 1) return 'Expires in 1 day';
 	return `Expires in ${days} days`;
 }
 
