@@ -18,6 +18,13 @@ pub use migration::Migrate;
 
 /// Default data directory: `~/.spacedrive` on desktop, platform data dir on mobile.
 pub fn default_data_dir() -> Result<PathBuf> {
+	// A process started with its own data dir (sd-server's DATA_DIR, a named
+	// instance) keeps sources, adapters and models there too, not under the
+	// per-user default, which it may not even be able to reach.
+	if let Some(dir) = PROCESS_DATA_DIR.get() {
+		return Ok(dir.clone());
+	}
+
 	#[cfg(not(any(target_os = "ios", target_os = "android")))]
 	let dir = dirs::home_dir()
 		.ok_or_else(|| anyhow!("Could not determine home directory"))?
@@ -40,6 +47,7 @@ pub fn default_data_dir() -> Result<PathBuf> {
 }
 
 static OWN_DATA_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+static PROCESS_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Record where this process keeps its own data, so walks and watchers can
 /// refuse to index it. A daemon whose data dir sits on an indexed drive
@@ -52,6 +60,7 @@ static OWN_DATA_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
 /// usually the `/Users` alias; `canonicalize` resolves symlinks but not
 /// firmlinks, so a single spelling misses half the events.
 pub fn mark_own_data_dir(dir: &Path) {
+	let _ = PROCESS_DATA_DIR.set(dir.to_path_buf());
 	let _ = OWN_DATA_DIRS.set(path_spellings(dir));
 }
 

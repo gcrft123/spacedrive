@@ -348,6 +348,7 @@ impl IndexerJob {
 						root_path,
 						volume_backend.as_ref(),
 						self.config.is_volume_indexing,
+						(!self.config.is_volume_indexing).then(|| self.config.is_current_scope()),
 					)
 					.await?;
 
@@ -448,8 +449,16 @@ impl JobHandler for IndexerJob {
 				false
 			};
 
-			// If snapshot not loaded, create new index for indexing
-			if !snapshot_loaded {
+			// A path restored from a snapshot or already walked this session
+			// lives in the volume's arena. A rescan walks into that arena, so
+			// entries keep their identity and a listing keeps its rows; without
+			// it the processing phase has no arena and the job fails.
+			if snapshot_loaded {
+				if let Some(local_path) = self.config.path.as_local_path() {
+					self.arena = cache.get_for_search(local_path);
+				}
+			}
+			if self.arena.is_none() {
 				let index = Arena::new()
 					.map_err(|e| JobError::Other(format!("Failed to create arena: {}", e)))?;
 				self.arena = Some(Arc::new(RwLock::new(index)));
@@ -683,6 +692,9 @@ impl IndexerJob {
 		root_path: &Path,
 		_volume_backend: Option<&Arc<dyn crate::volume::VolumeBackend>>,
 		is_volume_indexing: bool,
+		// For a folder walk, whether it covered only the folder's own children
+		// (true) or everything beneath it (false); None for a drive map.
+		prune_missing: Option<bool>,
 	) -> JobResult<()> {
 		use super::metadata::EntryMetadata;
 
@@ -701,6 +713,17 @@ impl IndexerJob {
 		} else {
 			Notify::Batched
 		});
+
+		let walked: std::collections::HashSet<std::path::PathBuf> = if prune_missing.is_some() {
+			state
+				.entry_batches
+				.iter()
+				.flatten()
+				.map(|entry| entry.path.clone())
+				.collect()
+		} else {
+			Default::default()
+		};
 
 		let total_batches = state.entry_batches.len();
 		let mut batch_number = 0;
@@ -736,6 +759,38 @@ impl IndexerJob {
 					batch.into_iter().map(EntryMetadata::from).collect(),
 				))
 				.await;
+		}
+
+		// A folder walk only adds and updates; deletions normally arrive as
+		// watcher events, which a network mount does not deliver. What the
+		// arena still holds under the folder that the walk did not meet and
+		// the disk no longer has is gone. The disk check keeps entries a walk
+		// skips on purpose: hidden files, ignored folders, summarised ones.
+		if let Some(current_only) = prune_missing {
+			let candidates = {
+				let index = arena.read().await;
+				if current_only {
+					index.list_directory(root_path).unwrap_or_default()
+				} else {
+					index.entries_beneath(root_path)
+				}
+			};
+			for child in candidates {
+				if walked.contains(&child) || tokio::fs::symlink_metadata(&child).await.is_ok() {
+					continue;
+				}
+				let is_directory = arena
+					.read()
+					.await
+					.get_entry_ref(&child)
+					.is_some_and(|entry| matches!(entry.kind, super::state::EntryKind::Directory));
+				writer
+					.apply(Seen::Lost {
+						path: child,
+						is_directory,
+					})
+					.await;
+			}
 		}
 
 		// The directories the walk turned back at are in the arena by now, so
